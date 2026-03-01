@@ -47,3 +47,94 @@ graph TD
     H -- 지어낸 내용임 --> G
     H -- 사실임 --> I[최종 답변]
 요약하자면... 제미나이의 safety_settings가 **"나쁜 말을 하지 않게 하는 최소한의 도덕성"**이라면, 랭체인의 가드레일은 **"우리 서비스가 정해준 규칙 안에서만 똑똑하게 행동하게 만드는 업무 매뉴얼"**입니다.
+
+### 샘플코드 ###
+```
+import os
+from typing import TypedDict, List
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.graph import StateGraph, END
+
+# 1. 상태 정의
+class GraphState(TypedDict):
+    question: str
+    answer: str
+    safety_check: str  # "pass" or "fail"
+
+# LLM 설정
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash")
+
+# --- [노드 1: 입력 가드레일] ---
+def input_guardrail(state: GraphState):
+    question = state["question"]
+    
+    # LLM에게 질문이 적절한지 판단하게 함
+    prompt = f"다음 질문이 'AI 기술'과 관련이 있으면 'pass', 아니면 'fail'이라고만 답하세요: {question}"
+    result = llm.invoke(prompt).content.strip().lower()
+    
+    print(f"--- [입력 검증]: {result} ---")
+    return {"safety_check": "pass" if "pass" in result else "fail"}
+
+# --- [노드 2: 답변 생성] ---
+def llm_node(state: GraphState):
+    # 가드레일을 통과했을 때만 실행됨
+    response = llm.invoke(state["question"])
+    return {"answer": response.content}
+
+# --- [노드 3: 출력 가드레일 (욕설/민감정보 체크)] ---
+def output_guardrail(state: GraphState):
+    answer = state["answer"]
+    banned_words = ["비밀번호", "주민번호", "욕설"] # 예시 금지어
+    
+    for word in banned_words:
+        if word in answer:
+            return {"answer": "죄송합니다. 부적절한 정보가 포함되어 답변을 드릴 수 없습니다."}
+    
+    return {"answer": answer}
+
+# --- [노드 4: 에러 메시지] ---
+def rejection_node(state: GraphState):
+    return {"answer": "죄송합니다. 저는 'AI 기술'에 관한 질문에만 답변할 수 있습니다."}
+
+# --- [그래프 빌드] ---
+workflow = StateGraph(GraphState)
+
+# 노드 등록
+workflow.add_node("input_check", input_guardrail)
+workflow.add_node("generate", llm_node)
+workflow.add_node("output_check", output_guardrail)
+workflow.add_node("reject", rejection_node)
+
+# 엣지 연결 (조건부 로직)
+workflow.set_entry_point("input_check")
+
+# 입력 검증 결과에 따라 분기
+workflow.add_conditional_edges(
+    "input_check",
+    lambda x: x["safety_check"],
+    {
+        "pass": "generate",
+        "fail": "reject"
+    }
+)
+
+workflow.add_edge("generate", "output_check")
+workflow.add_edge("output_check", END)
+workflow.add_edge("reject", END)
+
+# 컴파일
+app = workflow.compile()
+
+# --- [테스트 실행] ---
+# 1. 적절한 질문
+print("\n[테스트 1: 적절한 질문]")
+config = {"configurable": {"thread_id": "1"}}
+for output in app.stream({"question": "머신러닝이 뭐야?"}, config):
+    print(output)
+
+# 2. 부적절한 질문 (정치/요리 등)
+print("\n[테스트 2: 주제 이탈 질문]")
+for output in app.stream({"question": "오늘 점심 메뉴 추천해줘"}, config):
+    print(output)
+```
+
