@@ -115,3 +115,48 @@ Claude 앱이 켜지면 채팅창 하단 입력창 주위를 살펴보세요.
 경로 오타: 파이썬 실행 경로(python3)가 환경 변수에 설정되어 있는지, 파일 경로에 오타가 없는지 다시 확인해 보세요.
 라이브러리 미설치: pip install "mcp[cli]"를 수행했는지 확인하세요.
 로그 확인: 문제가 있다면 Claude 앱의 Settings > Developer > View Logs에서 에러 메시지를 확인할 수 있습니다.
+
+----
+
+리모트(Remote) MCP 서버는 로컬 파일이 아니라 **인터넷 주소(URL)**를 통해 연결됩니다. 주로 SSE(Server-Sent Events) 라는 방식을 사용하는데, claude_desktop_config.json 설정 방법이 로컬과는 약간 다릅니다.
+
+🌐 리모트 MCP 서버 등록 방법
+리모트 서버는 직접 실행하는 파일이 없으므로, **npx**라는 도구를 빌려와서 해당 주소로 연결을 시도하게 만듭니다.
+
+1. 설정 파일(claude_desktop_config.json) 수정
+아래와 같이 mcpServers 안에 내용을 추가합니다.
+
+json
+{
+  "mcpServers": {
+    "my-remote-server": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/inspector",
+        "sse",
+        "https://your-remote-server.com/sse"
+      ]
+    }
+  }
+}
+https://your-remote-server.com/sse: 이 부분이 실제 리모트 서버의 주소입니다.
+@modelcontextprotocol/inspector: 이 도구가 리모트 서버와 Claude 사이에서 통신을 중계해줍니다.
+🔍 왜 방식이 다른가요?
+구분	로컬 (Local)	리모트 (Remote)
+통신 방식	Stdio (표준 입출력)	SSE / HTTP (네트워크 통신)
+명령어	python3 server.py	npx ... sse URL
+대상	내 컴퓨터의 파일	인터넷 고정 IP/도메인
+🛠️ 실제 리모트 서버 예시 (테스트용)
+만약 인터넷에 공개된 샘플 리모트 서버가 있다면 이렇게 넣을 수 있습니다.
+
+json
+"remote-test": {
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/inspector", "sse", "https://api.example.com/mcp/sse"]
+}
+💡 주의사항
+Node.js 설치: npx를 사용하기 때문에 내 컴퓨터에 Node.js가 설치되어 있어야 합니다.
+보안(CORS/Auth): 리모트 서버는 아무나 접속하면 안 되므로 보통 API Key나 인증 절차가 필요할 수 있습니다. 서버 사양에 따라 인증 헤더(Header) 등을 추가해야 할 수도 있습니다.
+네트워크 상태: 로컬 서버와 달리 인터넷 연결이 끊기면 도구가 작동하지 않습니다.
+요약하자면: 리모트 서버는 npx를 이용해 인터넷 주소(URL)를 적어주는 방식으로 등록하면 됩니다
